@@ -1,35 +1,32 @@
-import pandas as pd
+import ray
+import time
+import numpy as np
 
-portfolio = [
-    {'Ticker': 'HDFCBANK', 'Buy_Price': 1700, 'Current_Price': 1750, 'Qty': 100}, 
-    {'Ticker': 'INFY',     'Buy_Price': 1600, 'Current_Price': 1400, 'Qty': 100}, 
-    {'Ticker': 'TCS',      'Buy_Price': 3500, 'Current_Price': 3600, 'Qty': 50}   
-]
+if ray.is_initialized(): ray.shutdown()
+ray.init(ignore_reinit_error=True)
 
-substitutes = {
-    'INFY': 'WIPRO',     
-    'HDFCBANK': 'ICICIBANK'
-}
+def _heavy_computation_impl(stock_id):
+    time.sleep(1) 
+    return f"Stock {stock_id}: Analyzed"
 
-print(f"--- TAX OPTIMIZER ENGINE ---")
+@ray.remote
+def heavy_computation(stock_id):
+    return _heavy_computation_impl(stock_id)
 
-total_realized_loss = 0
+stocks = range(10) 
 
-for pos in portfolio:
-    pnl = (pos['Current_Price'] - pos['Buy_Price']) * pos['Qty']
-    
-    if pnl < -10000:
-        print(f"📉 OPPORTUNITY: {pos['Ticker']} is down ₹{abs(pnl)}")
-        print(f"   ACTION: SELL {pos['Ticker']} @ {pos['Current_Price']}")
-        
-        sub = substitutes.get(pos['Ticker'], 'NIFTY_IT_ETF')
-        print(f"   ACTION: BUY {sub} (Substitute) to maintain sector exposure.")
-        
-        total_realized_loss += abs(pnl)
-        print(f"   ✅ Tax Loss Booked: ₹{abs(pnl)}")
-    else:
-        print(f"   HOLD: {pos['Ticker']} (P&L: {pnl})")
+print(f"--- DISTRIBUTED COMPUTING TEST ---")
 
-print("-" * 40)
-print(f"Total Tax Credit Generated: ₹{total_realized_loss}")
-print("Insight: This loss offsets your gains in HDFC, lowering your tax bill to ZERO.")
+start = time.time()
+results_seq = [_heavy_computation_impl(s) for s in stocks] 
+end = time.time()
+print(f"🐢 Sequential Python: {end - start:.2f} seconds")
+
+start = time.time()
+futures = [heavy_computation.remote(s) for s in stocks]
+results_par = ray.get(futures)
+end = time.time()
+print(f"🚀 Ray Distributed:   {end - start:.2f} seconds")
+
+print("Insight: Ray creates a 'Serverless' experience. 5 hours becomes 5 minutes.")
+ray.shutdown()
